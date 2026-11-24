@@ -1,0 +1,87 @@
+# Lima template for CloudByte Solutions: Amazon Linux 2023 aarch64
+# Tested with Lima 2.1.1 and 2.2.1 on macOS 27.0.1 (Apple M2), QEMU 11.1.2.
+# No edit needed before first run.
+#
+# Why QEMU and not Apple's built-in "vz" driver: on macOS 27, Amazon Linux 2023
+# hangs at boot under vz (its kernel never starts; other distros are fine).
+# QEMU boots it normally. QEMU can't use vz's virtiofs share, and the Amazon
+# Linux kernel has no 9p, so /host is mounted with reverse-sshfs instead. Amazon
+# Linux ships no sshfs package, so the first provision step below builds one.
+#
+# The image URL below points at a versioned release directory, not at
+# `os-images/latest/`. That is deliberate. AWS empties `latest/` on every new
+# release, so a filename pinned under it stops resolving and the download fails
+# with HTTP 403. A versioned directory is permanent, so this URL keeps working
+# and every student gets a byte-identical image.
+#
+# To move to a newer AL2023 release, change the version in BOTH the directory
+# and the filename, and replace `digest:` with the matching line from that
+# release's SHA256SUMS:
+#   https://cdn.amazonlinux.com/al2023/os-images/<version>/kvm-arm64/SHA256SUMS
+vmType: "qemu"
+arch: "aarch64"
+
+images:
+  - location: "https://cdn.amazonlinux.com/al2023/os-images/2023.12.20260803.3/kvm-arm64/al2023-kvm-2023.12.20260803.3-kernel-6.1-arm64.xfs.gpt.qcow2"
+    arch: "aarch64"
+    digest: "sha256:60f0ec867d0890741c3ab364eef3fdd8a22b192cf27fc819f3198bec8192022b"
+
+cpus: 2
+memory: "2GiB"
+disk: "30GiB"
+
+# Share only the project repo into the VM, at a fixed guest-side path.
+# /host inside the VM is your linux-project repo on the Mac. Nothing else
+# from your home directory is visible to the VM. If your repo lives
+# somewhere other than ~/cloud-course/linux-project, change `location:`
+# (the host side) but leave `mountPoint:` (the VM side) as /host.
+mountType: "reverse-sshfs"
+mounts:
+  - location: "~/cloud-course/linux-project"
+    mountPoint: "/host"
+    writable: true
+    # Off, so a script edited on the Mac runs in its new version straight away.
+    sshfs:
+      cache: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      # reverse-sshfs needs an sshfs binary in the guest, and the Amazon Linux
+      # 2023 repos have none. Build the pinned upstream release from source with
+      # the distro's own compiler and libraries, then remove the build tools so
+      # the server looks like a stock install. Skipped once sshfs exists.
+      command -v sshfs && exit 0
+      SSHFS_VERSION=3.7.6
+      SSHFS_SHA256=6a1bcb31450a077e9cb1b7ff158c71de34db697c3c0da6cb362502131e495893
+      dnf -y install fuse3 fuse3-libs
+      dnf -y install gcc meson ninja-build fuse3-devel glib2-devel tar xz
+      cd "$(mktemp -d)"
+      curl -fsSLo sshfs.tar.xz "https://github.com/libfuse/sshfs/releases/download/sshfs-${SSHFS_VERSION}/sshfs-${SSHFS_VERSION}.tar.xz"
+      echo "${SSHFS_SHA256}  sshfs.tar.xz" | sha256sum -c -
+      tar -xf sshfs.tar.xz
+      meson setup build "sshfs-${SSHFS_VERSION}"
+      ninja -C build sshfs
+      install -m 0755 build/sshfs /usr/local/bin/sshfs
+      ln -sf /usr/local/bin/sshfs /usr/bin/sshfs
+      dnf -y history undo last
+      sshfs --version
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      # Section 1 Phase C creates 12 users back-to-back. On Lima, the guest user
+      # already owns a 1-billion-entry range in /etc/subuid and /etc/subgid,
+      # which consumes the whole SUB_UID_MAX window and causes the 7th useradd
+      # to fail with "Can't get unique subordinate UID range". Rootless
+      # containers aren't used in this project, so we both (a) remove the
+      # existing pre-provisioned range and (b) turn off subuid/subgid
+      # allocation for new users. Either alone would work; doing both makes
+      # the fix robust to future shadow-utils or Lima changes.
+      sed -i '/^lima:/d;/^wbs:/d' /etc/subuid /etc/subgid || true
+      grep -q '^SUB_UID_COUNT' /etc/login.defs || echo 'SUB_UID_COUNT 0' >> /etc/login.defs
+      grep -q '^SUB_GID_COUNT' /etc/login.defs || echo 'SUB_GID_COUNT 0' >> /etc/login.defs
+      sed -i 's/^SUB_UID_COUNT.*/SUB_UID_COUNT 0/' /etc/login.defs
+      sed -i 's/^SUB_GID_COUNT.*/SUB_GID_COUNT 0/' /etc/login.defs

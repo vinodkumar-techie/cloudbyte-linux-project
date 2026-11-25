@@ -1,0 +1,55 @@
+
+CloudByte Linux Project
+Section 02: File Management and Permissions
+Permissions Test Report
+
+Environment:
+Amazon Linux 2023 running in Lima VM (cloudbyte).
+
+Tests performed:
+
+1. Engineering directory
+   - Owner: root
+   - Group: engineering
+   - Permission: 2770
+   - Result: PASS
+
+2. Marketing directory
+   - Owner: root
+   - Group: marketing
+   - Permission: 2770
+   - Result: PASS
+
+3. Operations directory
+   - Owner: root
+   - Group: operations
+   - Permission: 2770
+   - Result: PASS
+
+4. Shared Dropbox
+   - Owner: root
+   - Group: admins
+   - Permission: 1773
+   - Result: PASS
+
+5. Sample files
+   - Checked required files in all three team directories.
+   - Result: PASS
+
+6. Setgid inheritance
+   - Engineering test file inherited engineering group.
+   - Marketing test file inherited marketing group.
+   - Operations test file inherited operations group.
+   - Result: PASS
+
+Verification command:
+sudo bash /host/verify-permissions.sh
+
+Final result:
+16 tests passed.
+0 tests failed.
+
+Conclusion:
+All 16 automated permission verification checks passed.
+Team directory permissions, ownership, Dropbox configuration,
+sample files, and setgid group inheritance were verified.
